@@ -1,0 +1,40 @@
+version: "3.8"
+
+services:
+  unifi-discord-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: unifi-discord-bridge
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+      - WEBHOOK_PATH=${WEBHOOK_PATH:-/webhook/unifi}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW:-15}
+      - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-100}
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:3000/webhook/unifi/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - unifi-network
+
+networks:
+  unifi-network:
+    driver: bridge
