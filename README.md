@@ -19,14 +19,14 @@ The latest Docker image is automatically published to GitHub Container Registry 
 
 ```bash
 # Pull the latest image
-docker pull ghcr.io/YOUR_USERNAME/discord-unifi:latest
+docker pull ghcr.io/btholt/discord-unifi:latest
 
 # Run with environment variables
 docker run -d \
   --name unifi-discord-bridge \
   -p 3000:3000 \
   -e DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/YOUR_WEBHOOK_URL_HERE" \
-  ghcr.io/YOUR_USERNAME/discord-unifi:latest
+  ghcr.io/btholt/discord-unifi:latest
 ```
 
 ### Option 2: Local Development
@@ -282,7 +282,7 @@ Or use the GitHub UI to create a release.
 
 ```bash
 # Pull the latest release
-docker pull ghcr.io/YOUR_USERNAME/discord-unifi:latest
+docker pull ghcr.io/btholt/discord-unifi:latest
 
 # Run in production
 docker run -d \
@@ -291,7 +291,7 @@ docker run -d \
   -p 3000:3000 \
   -e DISCORD_WEBHOOK_URL="your_discord_webhook_url" \
   -e LOG_LEVEL="info" \
-  ghcr.io/YOUR_USERNAME/discord-unifi:latest
+  ghcr.io/btholt/discord-unifi:latest
 ```
 
 #### Option 2: Local Build

@@ -64,6 +64,42 @@ router.post(
     try {
       logger.info("Processing webhook request");
 
+      // Log key webhook fields for debugging
+      logger.info("Webhook structure", {
+        bodyKeys: Object.keys(req.body || {}),
+        alarmKeys: req.body.alarm ? Object.keys(req.body.alarm) : [],
+        conditionsCount: req.body.alarm?.conditions?.length || 0,
+        triggersCount: req.body.alarm?.triggers?.length || 0,
+        hasAlarmId: req.body.alarm?.id !== undefined,
+        hasEventId: req.body.eventId !== undefined,
+        hasId: req.body.id !== undefined,
+        // Check for potential ID fields in triggers
+        triggerIds:
+          req.body.alarm?.triggers?.map((t) => ({
+            device: t.device,
+            key: t.key,
+            id: t.id,
+          })) || [],
+        // Check for potential ID fields in conditions
+        conditionIds:
+          req.body.alarm?.conditions?.map((c) => ({
+            id: c.id,
+            conditionId: c.condition?.id,
+          })) || [],
+      });
+
+      // Log the entire webhook payload for debugging
+      if (process.env.DEBUG_WEBHOOK === "true") {
+        logger.info("Full webhook payload (DEBUG)", {
+          body: JSON.stringify(req.body, null, 2),
+          bodyType: typeof req.body,
+          bodyKeys: Object.keys(req.body || {}),
+          alarmKeys: req.body.alarm ? Object.keys(req.body.alarm) : [],
+          conditionsCount: req.body.alarm?.conditions?.length || 0,
+          triggersCount: req.body.alarm?.triggers?.length || 0,
+        });
+      }
+
       // Validate request body
       const validation = validateWebhookRequest(
         req.body,

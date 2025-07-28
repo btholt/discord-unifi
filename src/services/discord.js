@@ -240,6 +240,14 @@ class DiscordService {
         deviceCount: eventData.alarm?.triggers?.length || 0,
       });
 
+      // Log the extracted data for debugging
+      requestLogger.info("Extracted event data", {
+        alarm: eventData.alarm,
+        timestamp: eventData.timestamp,
+        extractedEventType: this.extractEventType(eventData.alarm),
+        deviceInfo: this.extractDeviceInfo(eventData.alarm),
+      });
+
       const discordMessage = this.transformToDiscordFormat(eventData);
       const result = await this.sendMessage(discordMessage, requestId);
 
