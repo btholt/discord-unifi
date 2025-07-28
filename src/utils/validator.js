@@ -13,13 +13,28 @@ function validateWebhookRequest(body, secret = null) {
     return { isValid: false, errors };
   }
 
-  // Basic required fields check (adjust based on actual Unifi Protect payload)
-  if (!body.timestamp) {
-    errors.push("Missing required field: timestamp");
+  // Check for required alarm field
+  if (!body.alarm || typeof body.alarm !== "object") {
+    errors.push("Missing required field: alarm");
+    return { isValid: false, errors };
   }
 
-  if (!body.eventType) {
-    errors.push("Missing required field: eventType");
+  // Check for required alarm properties
+  if (!body.alarm.name) {
+    errors.push("Missing required field: alarm.name");
+  }
+
+  if (!body.alarm.conditions || !Array.isArray(body.alarm.conditions)) {
+    errors.push("Missing required field: alarm.conditions (must be an array)");
+  }
+
+  if (!body.alarm.triggers || !Array.isArray(body.alarm.triggers)) {
+    errors.push("Missing required field: alarm.triggers (must be an array)");
+  }
+
+  // Check for timestamp
+  if (!body.timestamp) {
+    errors.push("Missing required field: timestamp");
   }
 
   // Optional webhook secret validation

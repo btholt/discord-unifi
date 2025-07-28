@@ -23,8 +23,11 @@ This document tracks the implementation of the Unifi Protect to Discord Webhook 
 - [x] **JSON Payload Handling**: Accept and parse JSON from Unifi Protect
 - [x] **Data Transformation**: Transform to Discord-friendly format
 - [x] **Event Type Support**: Support for motion, alert, person, vehicle, package events
-- [x] **Timestamp Handling**: Proper timestamp formatting
+- [x] **Timestamp Handling**: Proper timestamp formatting (supports both ISO strings and Unix timestamps)
 - [x] **Message Formatting**: Rich Discord embeds with emojis and colors
+- [x] **Unifi Protect Integration**: Proper parsing of Unifi Protect alarm structure
+- [x] **Event Type Detection**: Automatic detection from alarm conditions
+- [x] **Device Information**: Extraction and display of device/trigger information
 
 ### Security
 

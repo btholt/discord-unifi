@@ -82,8 +82,9 @@ router.post(
       const sanitizedData = sanitizeData(req.body);
 
       logger.info("Webhook data validated and sanitized", {
-        eventType: sanitizedData.eventType,
-        cameraName: sanitizedData.cameraName,
+        alarmName: sanitizedData.alarm?.name,
+        eventType: sanitizedData.alarm?.conditions?.[0]?.condition?.source,
+        deviceCount: sanitizedData.alarm?.triggers?.length || 0,
       });
 
       // Process and send to Discord

@@ -100,21 +100,38 @@ The service expects JSON payloads from Unifi Protect with the following structur
 
 ```json
 {
-  "eventType": "motion",
-  "cameraName": "Front Door",
-  "timestamp": "2025-01-15T10:30:00.000Z",
-  "description": "Motion detected on camera",
-  "location": "Front Yard"
+  "alarm": {
+    "name": "Motion Detected",
+    "sources": [],
+    "conditions": [
+      {
+        "condition": {
+          "type": "is",
+          "source": "motion"
+        }
+      }
+    ],
+    "triggers": [
+      {
+        "key": "motion",
+        "device": "74ACB99F4E24"
+      }
+    ]
+  },
+  "timestamp": 1722526793954
 }
 ```
 
 ### Supported Event Types
+
+The service automatically detects event types from the `alarm.conditions[].condition.source` field:
 
 - `motion` - Motion detection events
 - `alert` - General alerts
 - `person` - Person detection
 - `vehicle` - Vehicle detection
 - `package` - Package detection
+- `unknown` - Fallback for unrecognized event types
 
 ## Discord Message Format
 
