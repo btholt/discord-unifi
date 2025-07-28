@@ -1,4 +1,5 @@
 const axios = require("axios");
+const FormData = require("form-data");
 const { createLogger } = require("../utils/logger");
 
 const logger = createLogger();
@@ -24,6 +25,7 @@ class DiscordService {
     const alarmName = alarm.name || "Unknown Alarm";
     const eventType = this.extractEventType(alarm);
     const deviceInfo = this.extractDeviceInfo(alarm);
+    const personInfo = this.extractPersonInfo(alarm);
 
     // Convert timestamp to ISO string if it's a number
     const formattedTimestamp =
@@ -49,11 +51,29 @@ class DiscordService {
       inline: true,
     });
 
+    // Add person information if available (for face recognition)
+    if (personInfo && personInfo.name) {
+      embed.fields.push({
+        name: "Person",
+        value: personInfo.name,
+        inline: true,
+      });
+    }
+
     // Add device information if available
     if (deviceInfo) {
       embed.fields.push({
         name: "Device",
         value: deviceInfo,
+        inline: true,
+      });
+    }
+
+    // Add event ID if available (for thumbnail fetching)
+    if (personInfo && personInfo.eventId) {
+      embed.fields.push({
+        name: "Event ID",
+        value: personInfo.eventId,
         inline: true,
       });
     }
@@ -102,6 +122,8 @@ class DiscordService {
         if (source.includes("vehicle")) return "vehicle";
         if (source.includes("package")) return "package";
         if (source.includes("alert")) return "alert";
+        if (source.includes("face_known")) return "face_known";
+        if (source.includes("face_unknown")) return "face_unknown";
       }
     }
 
@@ -143,6 +165,120 @@ class DiscordService {
   }
 
   /**
+   * Extract person information from face recognition events
+   * @param {Object} alarm - Alarm object from Unifi Protect
+   * @returns {Object} Person information with name and event details
+   */
+  extractPersonInfo(alarm) {
+    if (!alarm.triggers || !Array.isArray(alarm.triggers)) {
+      return null;
+    }
+
+    for (const trigger of alarm.triggers) {
+      // Check for face recognition events
+      if (trigger.key === "face_known" || trigger.key === "face_unknown") {
+        const personInfo = {
+          name: null,
+          eventId: trigger.eventId,
+          eventLocalLink: alarm.eventLocalLink,
+          eventPath: alarm.eventPath,
+          timestamp: trigger.timestamp,
+        };
+
+        // Extract person name from group or value
+        if (trigger.group && trigger.group.name) {
+          personInfo.name = trigger.group.name;
+        } else if (trigger.value) {
+          personInfo.name = trigger.value;
+        }
+
+        return personInfo;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract event ID from any trigger
+   * @param {Object} alarm - Alarm object from Unifi Protect
+   * @returns {string|null} Event ID if found
+   */
+  extractEventId(alarm) {
+    if (!alarm.triggers || !Array.isArray(alarm.triggers)) {
+      return null;
+    }
+
+    for (const trigger of alarm.triggers) {
+      if (trigger.eventId) {
+        return trigger.eventId;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Fetch animated thumbnail from Unifi Protect
+   * @param {string} eventId - Event ID
+   * @param {string} requestId - Request ID for logging
+   * @returns {Promise<Buffer|null>} Thumbnail buffer or null if failed
+   */
+  async fetchAnimatedThumbnail(eventId, requestId) {
+    const requestLogger = this.logger.child({ requestId });
+    const protectApiKey = process.env.PROTECT_API_KEY;
+    const protectHost = process.env.PROTECT_HOST || "192.168.1.80";
+
+    if (!protectApiKey) {
+      requestLogger.info("No PROTECT_API_KEY configured, skipping thumbnail");
+      return null;
+    }
+
+    if (!eventId) {
+      requestLogger.warn("No event ID provided for thumbnail");
+      return null;
+    }
+
+    try {
+      const thumbnailUrl = `http://${protectHost}/proxy/protect/api/events/${eventId}/animated-thumbnail?keyFrameOnly=true&speedup=10`;
+
+      requestLogger.info("Fetching animated thumbnail", {
+        eventId,
+        thumbnailUrl: thumbnailUrl.replace(protectApiKey, "[REDACTED]"),
+      });
+
+      const response = await axios.get(thumbnailUrl, {
+        headers: {
+          "X-API-KEY": protectApiKey,
+        },
+        responseType: "arraybuffer",
+        timeout: 15000, // 15 second timeout
+      });
+
+      if (response.status === 200 && response.data) {
+        requestLogger.info("Successfully fetched animated thumbnail", {
+          eventId,
+          size: response.data.length,
+        });
+        return Buffer.from(response.data);
+      } else {
+        requestLogger.warn("Failed to fetch thumbnail - invalid response", {
+          eventId,
+          status: response.status,
+        });
+        return null;
+      }
+    } catch (error) {
+      requestLogger.error("Failed to fetch animated thumbnail", {
+        eventId,
+        error: error.message,
+        statusCode: error.response?.status,
+      });
+      return null;
+    }
+  }
+
+  /**
    * Get event configuration based on event type
    * @param {string} eventType - Type of Unifi Protect event
    * @returns {Object} Event configuration with emoji, title, and color
@@ -173,6 +309,16 @@ class DiscordService {
         emoji: "📦",
         title: "Package Detected",
         color: 5763719, // Green
+      },
+      face_known: {
+        emoji: "👤",
+        title: "Known Person Detected",
+        color: 3447003, // Blue
+      },
+      face_unknown: {
+        emoji: "👤",
+        title: "Unknown Person Detected",
+        color: 16776960, // Yellow
       },
     };
 
@@ -225,6 +371,63 @@ class DiscordService {
   }
 
   /**
+   * Send message with thumbnail to Discord webhook
+   * @param {Object} messageData - Message data to send
+   * @param {Buffer|null} thumbnailBuffer - Thumbnail buffer to upload
+   * @param {string} requestId - Request ID for logging
+   * @returns {Promise<Object>} Discord API response
+   */
+  async sendMessageWithThumbnail(messageData, thumbnailBuffer, requestId) {
+    const requestLogger = this.logger.child({ requestId });
+
+    try {
+      if (thumbnailBuffer) {
+        requestLogger.info("Sending message with thumbnail to Discord", {
+          webhookUrl: this.webhookUrl.substring(0, 50) + "...",
+          messageType: messageData.content ? "with_content" : "embed_only",
+          thumbnailSize: thumbnailBuffer.length,
+        });
+
+        // Create form data for file upload
+        const formData = new FormData();
+        formData.append("payload_json", JSON.stringify(messageData));
+        formData.append("files[0]", thumbnailBuffer, {
+          filename: "animated-thumbnail.gif",
+          contentType: "image/gif",
+        });
+
+        const response = await axios.post(this.webhookUrl, formData, {
+          headers: {
+            ...formData.getHeaders(),
+          },
+          timeout: 15000, // 15 second timeout for file upload
+        });
+
+        requestLogger.info(
+          "Message with thumbnail sent successfully to Discord",
+          {
+            statusCode: response.status,
+            messageId: response.data?.id,
+          }
+        );
+
+        return response.data;
+      } else {
+        // No thumbnail, send regular message
+        return await this.sendMessage(messageData, requestId);
+      }
+    } catch (error) {
+      requestLogger.error("Failed to send message with thumbnail to Discord", {
+        error: error.message,
+        statusCode: error.response?.status,
+        responseData: error.response?.data,
+      });
+
+      throw new Error(`Discord webhook failed: ${error.message}`);
+    }
+  }
+
+  /**
    * Process Unifi Protect event and send to Discord
    * @param {Object} eventData - Unifi Protect event data
    * @param {string} requestId - Request ID for logging
@@ -246,10 +449,24 @@ class DiscordService {
         timestamp: eventData.timestamp,
         extractedEventType: this.extractEventType(eventData.alarm),
         deviceInfo: this.extractDeviceInfo(eventData.alarm),
+        personInfo: this.extractPersonInfo(eventData.alarm),
       });
 
+      // Extract event ID for thumbnail
+      const eventId = this.extractEventId(eventData.alarm);
+
+      // Fetch animated thumbnail if API key is available
+      let thumbnailBuffer = null;
+      if (eventId) {
+        thumbnailBuffer = await this.fetchAnimatedThumbnail(eventId, requestId);
+      }
+
       const discordMessage = this.transformToDiscordFormat(eventData);
-      const result = await this.sendMessage(discordMessage, requestId);
+      const result = await this.sendMessageWithThumbnail(
+        discordMessage,
+        thumbnailBuffer,
+        requestId
+      );
 
       requestLogger.info("Event processed and sent successfully");
       return result;

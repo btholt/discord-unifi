@@ -65,15 +65,17 @@ The service will be available at `http://localhost:3000`
 
 ### Environment Variables
 
-| Variable              | Default          | Description                              |
-| --------------------- | ---------------- | ---------------------------------------- |
-| `PORT`                | `3000`           | Server port                              |
-| `DISCORD_WEBHOOK_URL` | **Required**     | Discord webhook URL                      |
-| `WEBHOOK_PATH`        | `/webhook/unifi` | Endpoint path for Unifi webhooks         |
-| `LOG_LEVEL`           | `info`           | Logging level (error, warn, info, debug) |
-| `WEBHOOK_SECRET`      | -                | Optional secret for webhook validation   |
-| `RATE_LIMIT_WINDOW`   | `15`             | Rate limiting window in minutes          |
-| `RATE_LIMIT_MAX`      | `100`            | Max requests per window                  |
+| Variable              | Default          | Description                                  |
+| --------------------- | ---------------- | -------------------------------------------- |
+| `PORT`                | `3000`           | Server port                                  |
+| `DISCORD_WEBHOOK_URL` | **Required**     | Discord webhook URL                          |
+| `WEBHOOK_PATH`        | `/webhook/unifi` | Endpoint path for Unifi webhooks             |
+| `LOG_LEVEL`           | `info`           | Logging level (error, warn, info, debug)     |
+| `WEBHOOK_SECRET`      | -                | Optional secret for webhook validation       |
+| `RATE_LIMIT_WINDOW`   | `15`             | Rate limiting window in minutes              |
+| `RATE_LIMIT_MAX`      | `100`            | Max requests per window                      |
+| `PROTECT_API_KEY`     | -                | Unifi Protect API key for thumbnail fetching |
+| `PROTECT_HOST`        | `192.168.1.80`   | Unifi Protect host address                   |
 
 ### Discord Webhook Setup
 
@@ -131,7 +133,33 @@ The service automatically detects event types from the `alarm.conditions[].condi
 - `person` - Person detection
 - `vehicle` - Vehicle detection
 - `package` - Package detection
+- `face_known` - Known person face recognition
+- `face_unknown` - Unknown person face recognition
 - `unknown` - Fallback for unrecognized event types
+
+## Thumbnail Support
+
+When `PROTECT_API_KEY` is configured, the service automatically:
+
+1. **Fetches Animated Thumbnails**: Downloads GIF thumbnails from Unifi Protect
+2. **Uploads to Discord**: Attaches thumbnails to Discord messages
+3. **Fallback Gracefully**: Continues without thumbnails if API key is missing
+
+### Thumbnail Configuration
+
+```bash
+# Add to your .env file
+PROTECT_API_KEY=your_protect_api_key_here
+PROTECT_HOST=192.168.1.80  # Optional, defaults to 192.168.1.80
+```
+
+### Thumbnail URL Format
+
+The service fetches thumbnails using:
+
+```
+http://{PROTECT_HOST}/proxy/protect/api/events/{eventId}/animated-thumbnail?keyFrameOnly=true&speedup=10
+```
 
 ## Discord Message Format
 
