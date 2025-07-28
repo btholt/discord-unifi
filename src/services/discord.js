@@ -226,11 +226,14 @@ class DiscordService {
    */
   async fetchAnimatedThumbnail(eventId, requestId) {
     const requestLogger = this.logger.child({ requestId });
-    const protectApiKey = process.env.PROTECT_API_KEY;
     const protectHost = process.env.PROTECT_HOST || "192.168.1.80";
+    const protectUsername = process.env.PROTECT_USERNAME;
+    const protectPassword = process.env.PROTECT_PASSWORD;
 
-    if (!protectApiKey) {
-      requestLogger.info("No PROTECT_API_KEY configured, skipping thumbnail");
+    if (!protectUsername || !protectPassword) {
+      requestLogger.info(
+        "No PROTECT_USERNAME/PASSWORD configured, skipping thumbnail"
+      );
       return null;
     }
 
@@ -240,26 +243,42 @@ class DiscordService {
     }
 
     try {
-      const thumbnailUrl = `http://${protectHost}/proxy/protect/api/events/${eventId}/animated-thumbnail?keyFrameOnly=true&speedup=10`;
+      // First, authenticate to get session token
+      const sessionToken = await this.authenticateWithProtect(
+        protectHost,
+        protectUsername,
+        protectPassword,
+        requestLogger
+      );
+      if (!sessionToken) {
+        requestLogger.error("Failed to authenticate with UniFi Protect");
+        return null;
+      }
 
-      requestLogger.info("Fetching animated thumbnail", {
+      // Use static thumbnail instead of animated (more reliable)
+      const thumbnailUrl = `https://${protectHost}/proxy/protect/api/events/${eventId}/thumbnail`;
+
+      requestLogger.info("Fetching thumbnail", {
         eventId,
-        thumbnailUrl: thumbnailUrl.replace(protectApiKey, "[REDACTED]"),
+        thumbnailUrl,
       });
 
       const response = await axios.get(thumbnailUrl, {
         headers: {
-          "X-API-KEY": protectApiKey,
+          accept: "image/*",
+          "user-agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+          Cookie: `TOKEN=${sessionToken}`,
         },
         responseType: "arraybuffer",
-        timeout: 15000, // 15 second timeout
+        timeout: 15000,
         httpsAgent: new (require("https").Agent)({
-          rejectUnauthorized: false, // Ignore self-signed certificates
+          rejectUnauthorized: false,
         }),
       });
 
       if (response.status === 200 && response.data) {
-        requestLogger.info("Successfully fetched animated thumbnail", {
+        requestLogger.info("Successfully fetched thumbnail", {
           eventId,
           size: response.data.length,
         });
@@ -272,8 +291,53 @@ class DiscordService {
         return null;
       }
     } catch (error) {
-      requestLogger.error("Failed to fetch animated thumbnail", {
+      requestLogger.error("Failed to fetch thumbnail", {
         eventId,
+        error: error.message,
+        statusCode: error.response?.status,
+      });
+      return null;
+    }
+  }
+
+  async authenticateWithProtect(host, username, password, logger) {
+    try {
+      const loginResponse = await axios.post(
+        `https://${host}/api/auth/login`,
+        {
+          username: username,
+          password: password,
+          remember: true,
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent":
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+          },
+          httpsAgent: new (require("https").Agent)({
+            rejectUnauthorized: false,
+          }),
+          timeout: 10000,
+        }
+      );
+
+      // Extract session token from cookies
+      const cookies = loginResponse.headers["set-cookie"];
+      if (cookies) {
+        for (const cookie of cookies) {
+          if (cookie.includes("TOKEN=")) {
+            const sessionToken = cookie.split("TOKEN=")[1].split(";")[0];
+            logger.info("Successfully authenticated with UniFi Protect");
+            return sessionToken;
+          }
+        }
+      }
+
+      logger.error("No session token found in authentication response");
+      return null;
+    } catch (error) {
+      logger.error("Authentication failed", {
         error: error.message,
         statusCode: error.response?.status,
       });
@@ -395,8 +459,8 @@ class DiscordService {
         const formData = new FormData();
         formData.append("payload_json", JSON.stringify(messageData));
         formData.append("files[0]", thumbnailBuffer, {
-          filename: "animated-thumbnail.gif",
-          contentType: "image/gif",
+          filename: "thumbnail.jpg",
+          contentType: "image/jpeg",
         });
 
         const response = await axios.post(this.webhookUrl, formData, {
@@ -458,7 +522,7 @@ class DiscordService {
       // Extract event ID for thumbnail
       const eventId = this.extractEventId(eventData.alarm);
 
-      // Fetch animated thumbnail if API key is available
+      // Fetch thumbnail if credentials are available
       let thumbnailBuffer = null;
       if (eventId) {
         thumbnailBuffer = await this.fetchAnimatedThumbnail(eventId, requestId);
