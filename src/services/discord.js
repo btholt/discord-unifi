@@ -253,6 +253,9 @@ class DiscordService {
         },
         responseType: "arraybuffer",
         timeout: 15000, // 15 second timeout
+        httpsAgent: new (require("https").Agent)({
+          rejectUnauthorized: false, // Ignore self-signed certificates
+        }),
       });
 
       if (response.status === 200 && response.data) {
